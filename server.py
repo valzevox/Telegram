@@ -24,30 +24,48 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(m
                     handlers=[logging.StreamHandler(), logging.FileHandler('server.log', encoding='utf-8')])
 logger = logging.getLogger(__name__)
 
+import os
+
 DATA = {}
 
-# Чтение файла 'data_info.txt'
-try:
-    with open('data_info.txt', 'r', encoding='utf-8') as file:
-        for line in file:
-            line = line.strip()
-            
-            if '=' in line:
-                key, value = line.split('=', 1)
-                DATA[key.strip()] = value.strip()
+# 🔥 ĐỌC TỪ ENVIRONMENT VARIABLES (cho Render/Cloud) hoặc FILE (cho local)
+def load_config():
+    """Load config từ Environment Variables hoặc data_info.txt"""
+    # Ưu tiên Environment Variables (cho cloud deployment)
+    if os.getenv('TOKEN'):
+        logger.info("📡 Loading config from ENVIRONMENT VARIABLES (Cloud mode)")
+        return {
+            'TOKEN': os.getenv('TOKEN'),
+            'GROUP_CHAT_ID': os.getenv('GROUP_CHAT_ID')
+        }
+    
+    # Fallback: Đọc từ file (cho local development)
+    logger.info("📁 Loading config from data_info.txt (Local mode)")
+    try:
+        with open('data_info.txt', 'r', encoding='utf-8') as file:
+            data = {}
+            for line in file:
+                line = line.strip()
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    data[key.strip()] = value.strip()
+            return data
+    except FileNotFoundError:
+        logger.error("❌ Không tìm thấy data_info.txt và không có ENV variables!")
+        return {}
 
-except FileNotFoundError:
-    logger.error("Критическая ошибка: Файл 'data_info.txt' не найден. Проверьте путь.")
+# Load configuration
+DATA = load_config()
 
 # Присвоение считанных значений переменным
 try:
     TOKEN = DATA['TOKEN']
     GROUP_CHAT_ID = int(DATA['GROUP_CHAT_ID']) 
+    logger.info(f"✅ Config loaded - Group ID: {GROUP_CHAT_ID}")
 
 except KeyError as e:
-    logger.error(f"Ошибка: Ключ {e} не найден в файле 'data_info.txt'.")
+    logger.error(f"Ошибка: Ключ {e} не найден.")
 except ValueError:
-    # Эта ошибка сработает, если значение не является числом
     logger.error("Ошибка: GROUP_CHAT_ID должен быть корректным целым числом.")
 
 bot = Bot(TOKEN)
@@ -1045,7 +1063,16 @@ async def handle_generic_command(message: Message):
         await message.reply(f"❌ {e}")
 
 async def main():
+async def main():
     global BOT_USERNAME, CLIENT_HISTORY_CACHE
+    
+    # 🔥 XÓA WEBHOOK TRƯỚC KHI BẮT ĐẦU POLLING
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Webhook đã được xóa thành công")
+    except Exception as e:
+        logger.warning(f"⚠️ Không thể xóa webhook: {e}")
+    
     # 🔥 Инициализация истории при запуске
     CLIENT_HISTORY_CACHE = await load_client_history()
     me = await bot.get_me()
